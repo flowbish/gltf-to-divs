@@ -1,0 +1,8 @@
+[package]
+name = "rendering"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+gltf = { version = "1", features = ["names", "import", "utils", "allow_empty_texture"] }
