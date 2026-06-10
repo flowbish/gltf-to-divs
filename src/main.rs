@@ -7,7 +7,9 @@ use gltf::image::Source;
 enum Command {
     GenerateDivs {
         #[arg(long)]
-        scale: Option<f32>
+        scale: Option<f32>,
+        #[arg(long)]
+        quadify: bool,
     },
     ListNodes,
 }
@@ -67,6 +69,7 @@ impl Generator {
         self.add_output(&format!("    )"));
 
         let [x, y, z, w] = node.transforms.rotation;
+        let y = -1.0 * y;
         self.add_output(&format!("    rotate3d({x}, {y}, {z}, calc(-2 * acos({w})))"));
 
         // Custom animatable rotation
@@ -122,6 +125,45 @@ impl Generator {
     --texture-c-t: {tex_c_t};
 "></div>"#));
     }
+
+    fn visit_triangle(&mut self, triangle: &Triangle) {
+        let scale = self.scale;
+        let a_x = triangle.a.position[0] * scale;
+        let a_y = triangle.a.position[1] * -scale;
+        let a_z = triangle.a.position[2] * scale;
+        let b_x = triangle.b.position[0] * scale;
+        let b_y = triangle.b.position[1] * -scale;
+        let b_z = triangle.b.position[2] * scale;
+        let c_x = triangle.c.position[0] * scale;
+        let c_y = triangle.c.position[1] * -scale;
+        let c_z = triangle.c.position[2] * scale;
+        let texture_image = triangle.uri.clone().unwrap_or("texture.webp".to_string());
+        let tex_a_s = triangle.a.texture[0];
+        let tex_a_t = triangle.a.texture[1];
+        let tex_b_s = triangle.b.texture[0];
+        let tex_b_t = triangle.b.texture[1];
+        let tex_c_s = triangle.c.texture[0];
+        let tex_c_t = triangle.c.texture[1];
+        self.add_output(&format!(r#"
+<div class="tri" style="
+    --a-x: {a_x};
+    --a-y: {a_y};
+    --a-z: {a_z};
+    --b-x: {b_x};
+    --b-y: {b_y};
+    --b-z: {b_z};
+    --c-x: {c_x};
+    --c-y: {c_y};
+    --c-z: {c_z};
+    --texture-image: url({texture_image});
+    --texture-a-s: {tex_a_s};
+    --texture-a-t: {tex_a_t};
+    --texture-b-s: {tex_b_s};
+    --texture-b-t: {tex_b_t};
+    --texture-c-s: {tex_c_s};
+    --texture-c-t: {tex_c_t};
+"></div>"#));
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -137,13 +179,19 @@ struct Position{
     texture: [f32; 2],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Triangle([Position; 3]);
+#[derive(Debug, Clone, PartialEq)]
+struct Triangle {
+    a: Position,
+    b: Position,
+    c: Position,
+    uri: Option<String>,
+}
 
 impl Triangle {
     fn merge(&self, other: &Triangle, uri: Option<String>) -> Option<Rectangle> {
-        if self.0[1] == other.0[0] && self.0[2] == other.0[2] {
-            Some(Rectangle { top_left: self.0[0], top_right: self.0[1], bottom_left: self.0[2], bottom_right: other.0[1], uri})
+        if self.b == other.a && self.c == other.c {
+            let _bottom_right = other.b;
+            Some(Rectangle { top_left: self.a, top_right: self.b, bottom_left: self.c, uri})
         } else {
             None
         }
@@ -155,12 +203,10 @@ struct Rectangle {
     top_left: Position,
     top_right: Position,
     bottom_left: Position,
-    bottom_right: Position,
     uri: Option<String>,
 }
 
-fn sort_rectangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &Vec<u32>, tex_coords: &Vec<[f32; 2]>) -> Vec<Rectangle> {
-    let mut rectangles = vec![];
+fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &Vec<u32>, tex_coords: &Vec<[f32; 2]>) -> Vec<Triangle> {
     let uri = material.pbr_metallic_roughness().base_color_texture().and_then(
         |info| info.texture().source()
     ).and_then(|image| {
@@ -172,29 +218,34 @@ fn sort_rectangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &
         }
     });
 
-    let triangles: Vec<Triangle> = indices
+    indices
         .as_slice()
         .chunks(3)
         .map(|chunk| {
             let a = chunk[0] as usize;
             let b = chunk[1] as usize;
             let c = chunk[2] as usize;
-            Triangle([
-                Position{position: positions[a], texture: tex_coords[a]},
-                Position{position: positions[b], texture: tex_coords[b]},
-                Position{position: positions[c], texture: tex_coords[c]},
-            ])
+            Triangle {
+                a: Position{position: positions[a], texture: tex_coords[a]},
+                b: Position{position: positions[b], texture: tex_coords[b]},
+                c: Position{position: positions[c], texture: tex_coords[c]},
+                uri: uri.clone(),
+            }
         })
-        .collect();
+        .collect()
+}
+
+fn sort_rectangles(triangles: Vec<Triangle>) -> Vec<Rectangle> {
+    let mut rectangles = vec![];
 
     let tri_pairs: Vec<(Triangle, Triangle)> = triangles
         .as_slice()
         .chunks(2)
-        .map(|chunk| (chunk[0], chunk[1]))
+        .map(|chunk| (chunk[0].clone(), chunk[1].clone()))
         .collect();
 
     for (left, right) in tri_pairs {
-        if let Some(rect) = left.merge(&right, uri.clone()) {
+        if let Some(rect) = left.merge(&right, left.uri.clone()) {
             rectangles.push(rect);
         } else {
             eprintln!("Failed to merge");
@@ -203,7 +254,7 @@ fn sort_rectangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &
     rectangles
 }
 
-fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<Data>, desired_nodes: &Vec<String>) {
+fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<Data>, desired_nodes: &Vec<String>, quadify: bool) {
     let name = node.name().unwrap_or("N/A");
 
     if !desired_nodes.is_empty() && !desired_nodes.contains(&name.to_string()) {
@@ -233,21 +284,28 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
                 .read_tex_coords(0)
                 .map(|iter| iter.into_f32().collect::<Vec<[f32; 2]>>())
                 .unwrap_or_else(|| Vec::new());
-            let rectangles = sort_rectangles(primitive.material(), &positions, &indices, &tex_coords);
-            for rectangle in &rectangles {
-                generator.visit_rectangle(rectangle);
+            let triangles = make_triangles(primitive.material(), &positions, &indices, &tex_coords);
+            if quadify {
+                let rectangles = sort_rectangles(triangles);
+                for rectangle in &rectangles {
+                    generator.visit_rectangle(rectangle);
+                }
+            } else {
+                for triangle in &triangles {
+                    generator.visit_triangle(triangle);
+                }
             }
         }
     }
 
     for child in node.children() {
-        visit_children(generator, &child, buffers, desired_nodes);
+        visit_children(generator, &child, buffers, desired_nodes, quadify);
     }
 
     generator.pop_node();
 }
 
-fn generate_divs(gltf: &gltf::Document, buffers: &Vec<Data>, desired_nodes: &Vec<String>, scale: Option<f32>) {
+fn generate_divs(gltf: &gltf::Document, buffers: &Vec<Data>, desired_nodes: &Vec<String>, scale: Option<f32>, quadify: bool) {
     let mut generator = Generator::new(scale.unwrap_or(1.0));
 
     // TODO: this should only scale the base div, and not the geometry underneath
@@ -258,7 +316,7 @@ fn generate_divs(gltf: &gltf::Document, buffers: &Vec<Data>, desired_nodes: &Vec
     });
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            visit_children(&mut generator, &node, &buffers, desired_nodes);
+            visit_children(&mut generator, &node, &buffers, desired_nodes, quadify);
         }
     }
     generator.pop_node();
@@ -293,8 +351,8 @@ fn main() {
         Command::ListNodes => {
             list_nodes(&gltf);
         }
-        Command::GenerateDivs { scale } => {
-            generate_divs(&gltf, &buffers, &args.nodes, scale);
+        Command::GenerateDivs { scale, quadify } => {
+            generate_divs(&gltf, &buffers, &args.nodes, scale, quadify);
         }
     }
 
