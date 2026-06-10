@@ -18,15 +18,12 @@ jobs:
   build_and_test:
     name: Rust project - latest
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - stable
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Update Rust
-        run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+        run: rustup update stable && rustup default stable
 
       - name: Install wasm-pack
         uses: jetli/wasm-pack-action@v0.4.0
@@ -45,7 +42,8 @@ jobs:
       - id: vars
         run: echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: R2 Upload Action
+      # https://github.com/marketplace/actions/r2-upload-action
+      - name: Upload version
         uses: ryand56/r2-upload-action@v1.4
         with:
           r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
@@ -54,6 +52,17 @@ jobs:
           r2-bucket: ${{ secrets.R2_BUCKET }}
           source-dir: pkg
           destination-dir: libraries/gltf-to-divs/${{ steps.vars.outputs.short_sha }}
+
+      - name: Upload latest
+        uses: ryand56/r2-upload-action@v1.4
+        with:
+          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET }}
+          source-dir: pkg
+          destination-dir: libraries/gltf-to-divs/latest
+          keep-file-fresh: true
 
 
       - name: 'Upload package'
