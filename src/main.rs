@@ -50,7 +50,9 @@ fn main() {
             list_nodes(&gltf);
         }
         Command::GenerateDivs { scale, quadify } => {
-            generate_divs(&gltf, &buffers, &args.nodes, scale, quadify);
+            let mut generator = Generator::new(scale.unwrap_or(1.0));
+            generate_divs(&mut generator, &gltf, &buffers, &args.nodes, quadify);
+            println!("{}", generator.output());
         }
     }
 }

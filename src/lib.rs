@@ -1,6 +1,10 @@
-use gltf::buffer::Data;
+use gltf::buffer;
+use gltf::image;
 use gltf::Material;
 use gltf::image::Source;
+use gltf::Document;
+
+use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone)]
 struct Node {
@@ -31,6 +35,10 @@ impl Generator {
             self.output.push_str(line);
             self.output.push('\n');
         }
+    }
+
+    pub fn output(&self) -> &str {
+        &self.output
     }
 
     fn push_node(&mut self, node: Node) {
@@ -233,7 +241,7 @@ fn sort_rectangles(triangles: Vec<Triangle>) -> Vec<Rectangle> {
     rectangles
 }
 
-fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<Data>, desired_nodes: &Vec<String>, quadify: bool) {
+fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
     let name = node.name().unwrap_or("N/A");
 
     if !desired_nodes.is_empty() && !desired_nodes.contains(&name.to_string()) {
@@ -284,8 +292,7 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
     generator.pop_node();
 }
 
-pub fn generate_divs(gltf: &gltf::Document, buffers: &Vec<Data>, desired_nodes: &Vec<String>, scale: Option<f32>, quadify: bool) {
-    let mut generator = Generator::new(scale.unwrap_or(1.0));
+pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
 
     // TODO: this should only scale the base div, and not the geometry underneath
     let scale = 1.0;
@@ -295,10 +302,51 @@ pub fn generate_divs(gltf: &gltf::Document, buffers: &Vec<Data>, desired_nodes: 
     });
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            visit_children(&mut generator, &node, &buffers, desired_nodes, quadify);
+            visit_children(generator, &node, &buffers, desired_nodes, quadify);
         }
     }
     generator.pop_node();
 
     println!("{}", &generator.output);
+}
+
+struct ImportedGltf {
+    document: Document,
+    buffers: Vec<buffer::Data>,
+    images: Vec<image::Data>,
+}
+#[wasm_bindgen]
+pub struct DivGenerator {
+    gltf: Option<ImportedGltf>,
+}
+
+#[wasm_bindgen]
+impl DivGenerator {
+    #[wasm_bindgen(constructor)]
+    pub fn new(gltf_contents: &[u8]) -> Self {
+
+        Self {
+            gltf: gltf::import_slice(gltf_contents).ok().map(|import| {
+                ImportedGltf {
+                    document: import.0,
+                    buffers: import.1,
+                    images: import.2,
+                }
+            })
+        }
+    }
+
+    pub fn import_successful(&self) -> bool {
+        self.gltf.is_some()
+    }
+
+    pub fn generate_divs(&self, scale: f32) -> String {
+        if let Some(gltf) = &self.gltf {
+            let mut generator = Generator::new(scale);
+            generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true);
+            generator.output().to_string()
+        } else {
+            String::new()
+        }
+    }
 }
