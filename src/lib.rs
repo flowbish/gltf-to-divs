@@ -292,7 +292,7 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
     generator.pop_node();
 }
 
-pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
+fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
 
     // TODO: this should only scale the base div, and not the geometry underneath
     let scale = 1.0;
@@ -313,11 +313,11 @@ pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: 
 struct ImportedGltf {
     document: Document,
     buffers: Vec<buffer::Data>,
-    images: Vec<image::Data>,
+    _images: Vec<image::Data>,
 }
 #[wasm_bindgen]
 pub struct DivGenerator {
-    gltf: Option<ImportedGltf>,
+    gltf: Result<ImportedGltf, String>,
 }
 
 #[wasm_bindgen]
@@ -326,22 +326,22 @@ impl DivGenerator {
     pub fn new(gltf_contents: &[u8]) -> Self {
 
         Self {
-            gltf: gltf::import_slice(gltf_contents).ok().map(|import| {
+            gltf: gltf::import_slice(gltf_contents).map(|import| {
                 ImportedGltf {
                     document: import.0,
                     buffers: import.1,
-                    images: import.2,
+                    _images: import.2,
                 }
-            })
+            }).map_err(|e| e.to_string())
         }
     }
 
-    pub fn import_successful(&self) -> bool {
-        self.gltf.is_some()
+    pub fn import_error(&self) -> Option<String> {
+        self.gltf.as_ref().err().cloned()
     }
 
     pub fn generate_divs(&self, scale: f32) -> String {
-        if let Some(gltf) = &self.gltf {
+        if let Ok(gltf) = &self.gltf {
             let mut generator = Generator::new(scale);
             generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true);
             generator.output().to_string()
