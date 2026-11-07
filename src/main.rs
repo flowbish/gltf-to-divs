@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use rendering::generate_divs;
+use rendering::{Generator, generate_divs};
 
 
 #[derive(Subcommand, Debug)]

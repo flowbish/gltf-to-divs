@@ -12,14 +12,14 @@ struct Node {
     transforms: Transforms,
 }
 
-struct Generator {
+pub struct Generator {
     nodes: Vec<Node>,
     output: String,
     scale: f32
 }
 
 impl Generator {
-    fn new(scale: f32) -> Self {
+    pub fn new(scale: f32) -> Self {
         Self {
             nodes: Vec::new(),
             output: String::new(),
@@ -92,8 +92,7 @@ impl Generator {
         let tex_b_t = rectangle.top_right.texture[1];
         let tex_c_s = rectangle.bottom_left.texture[0];
         let tex_c_t = rectangle.bottom_left.texture[1];
-        self.add_output(&format!(r#"
-<div class="rect" style="
+        self.add_output(&format!(r#"<div class="rect" style="
     --a-x: {a_x};
     --a-y: {a_y};
     --a-z: {a_z};
@@ -115,24 +114,23 @@ impl Generator {
 
     fn visit_triangle(&mut self, triangle: &Triangle) {
         let scale = self.scale;
-        let a_x = triangle.a.position[0] * scale;
-        let a_y = triangle.a.position[1] * -scale;
-        let a_z = triangle.a.position[2] * scale;
-        let b_x = triangle.b.position[0] * scale;
-        let b_y = triangle.b.position[1] * -scale;
-        let b_z = triangle.b.position[2] * scale;
+        let a_x = triangle.b.position[0] * scale;
+        let a_y = triangle.b.position[1] * -scale;
+        let a_z = triangle.b.position[2] * scale;
+        let b_x = triangle.a.position[0] * scale;
+        let b_y = triangle.a.position[1] * -scale;
+        let b_z = triangle.a.position[2] * scale;
         let c_x = triangle.c.position[0] * scale;
         let c_y = triangle.c.position[1] * -scale;
         let c_z = triangle.c.position[2] * scale;
         let texture_image = triangle.uri.clone().unwrap_or("texture.webp".to_string());
-        let tex_a_s = triangle.a.texture[0];
-        let tex_a_t = triangle.a.texture[1];
-        let tex_b_s = triangle.b.texture[0];
-        let tex_b_t = triangle.b.texture[1];
+        let tex_a_s = triangle.b.texture[0];
+        let tex_a_t = triangle.b.texture[1];
+        let tex_b_s = triangle.a.texture[0];
+        let tex_b_t = triangle.a.texture[1];
         let tex_c_s = triangle.c.texture[0];
         let tex_c_t = triangle.c.texture[1];
-        self.add_output(&format!(r#"
-<div class="tri" style="
+        self.add_output(&format!(r#"<div class="tri" style="
     --a-x: {a_x};
     --a-y: {a_y};
     --a-z: {a_z};
@@ -292,7 +290,7 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
     generator.pop_node();
 }
 
-fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
+pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
 
     // TODO: this should only scale the base div, and not the geometry underneath
     let scale = 1.0;
