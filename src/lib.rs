@@ -85,6 +85,7 @@ impl Generator {
         let c_x = rectangle.bottom_left.position[0] * scale;
         let c_y = rectangle.bottom_left.position[1] * -scale;
         let c_z = rectangle.bottom_left.position[2] * scale;
+        let color = rectangle.color.to_string();
         let texture_image = rectangle.uri.clone().unwrap_or("texture.webp".to_string());
         let tex_a_s = rectangle.top_left.texture[0];
         let tex_a_t = rectangle.top_left.texture[1];
@@ -102,6 +103,7 @@ impl Generator {
     --c-x: {c_x};
     --c-y: {c_y};
     --c-z: {c_z};
+    background-color: {color};
     --texture-image: url({texture_image});
     --texture-a-s: {tex_a_s};
     --texture-a-t: {tex_a_t};
@@ -123,6 +125,7 @@ impl Generator {
         let c_x = triangle.c.position[0] * scale;
         let c_y = triangle.c.position[1] * -scale;
         let c_z = triangle.c.position[2] * scale;
+        let color = triangle.color.to_string();
         let texture_image = triangle.uri.clone().unwrap_or("texture.webp".to_string());
         let tex_a_s = triangle.b.texture[0];
         let tex_a_t = triangle.b.texture[1];
@@ -140,6 +143,7 @@ impl Generator {
     --c-x: {c_x};
     --c-y: {c_y};
     --c-z: {c_z};
+    background-color: {color};
     --texture-image: url({texture_image});
     --texture-a-s: {tex_a_s};
     --texture-a-t: {tex_a_t};
@@ -164,19 +168,35 @@ struct Position{
     texture: [f32; 2],
 }
 
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Color {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+impl std::fmt::Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rgba({}, {}, {}, {})", self.r, self.g, self.b, self.a)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct Triangle {
     a: Position,
     b: Position,
     c: Position,
     uri: Option<String>,
+    color: Color,
 }
 
 impl Triangle {
     fn merge(&self, other: &Triangle, uri: Option<String>) -> Option<Rectangle> {
         if self.b == other.a && self.c == other.c {
             let _bottom_right = other.b;
-            Some(Rectangle { top_left: self.a, top_right: self.b, bottom_left: self.c, uri})
+            Some(Rectangle { top_left: self.a, top_right: self.b, bottom_left: self.c, uri, color: self.color})
         } else {
             None
         }
@@ -189,9 +209,14 @@ struct Rectangle {
     top_right: Position,
     bottom_left: Position,
     uri: Option<String>,
+    color: Color,
 }
 
 fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &Vec<u32>, tex_coords: &Vec<[f32; 2]>) -> Vec<Triangle> {
+    let [rf, gf, bf, af] = material.pbr_metallic_roughness().base_color_factor();
+    let [r, g, b, a] = [(rf * 255f32) as u8, (gf * 255f32) as u8, (bf * 255f32) as u8, (af * 255f32) as u8];
+    let color = Color { r, g, b, a };
+
     let uri = material.pbr_metallic_roughness().base_color_texture().and_then(
         |info| info.texture().source()
     ).and_then(|image| {
@@ -215,6 +240,7 @@ fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &V
                 b: Position{position: positions[b], texture: tex_coords[b]},
                 c: Position{position: positions[c], texture: tex_coords[c]},
                 uri: uri.clone(),
+                color,
             }
         })
         .collect()
