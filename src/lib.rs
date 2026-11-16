@@ -103,7 +103,7 @@ impl Generator {
     --c-x: {c_x};
     --c-y: {c_y};
     --c-z: {c_z};
-    background-color: {color};
+    --background-color: {color};
     --texture-image: url({texture_image});
     --texture-a-s: {tex_a_s};
     --texture-a-t: {tex_a_t};
@@ -143,7 +143,7 @@ impl Generator {
     --c-x: {c_x};
     --c-y: {c_y};
     --c-z: {c_z};
-    background-color: {color};
+    --background-color: {color};
     --texture-image: url({texture_image});
     --texture-a-s: {tex_a_s};
     --texture-a-t: {tex_a_t};
