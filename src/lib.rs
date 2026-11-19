@@ -12,18 +12,29 @@ struct Node {
     transforms: Transforms,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MeshTransparency {
+    /// This model is opaque, so backface culling optimizations may be applied.
+    Opaque,
+    /// This model or its texture is transparent and requires visibilty of the backs of polygons.
+    /// This must be enabled for blockbench models.
+    Transparent,
+}
+
 pub struct Generator {
     nodes: Vec<Node>,
     output: String,
-    scale: f32
+    scale: f32,
+    mesh_transparency: MeshTransparency,
 }
 
 impl Generator {
-    pub fn new(scale: f32) -> Self {
+    pub fn new(scale: f32, mesh_transparency: MeshTransparency) -> Self {
         Self {
             nodes: Vec::new(),
             output: String::new(),
             scale,
+            mesh_transparency,
         }
     }
 
@@ -75,6 +86,12 @@ impl Generator {
     }
 
     fn visit_face(&mut self, face: &Face, class: &str) {
+        let mut classes = vec![class];
+        if self.mesh_transparency == MeshTransparency::Opaque {
+            classes.push("opaque");
+        }
+        let classes = classes.join(" ");
+
         let scale = self.scale;
         let a_x = face.b.position[0] * scale;
         let a_y = face.b.position[1] * -scale;
@@ -93,7 +110,7 @@ impl Generator {
         let tex_b_t = face.a.texture[1];
         let tex_c_s = face.c.texture[0];
         let tex_c_t = face.c.texture[1];
-        self.add_output(&format!(r#"<div class="{class}" style="
+        self.add_output(&format!(r#"<div class="{classes}" style="
     --a-x: {a_x};
     --a-y: {a_y};
     --a-z: {a_z};
@@ -288,8 +305,6 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
 }
 
 pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
-
-    // TODO: this should only scale the base div, and not the geometry underneath
     let scale = 1.0;
     generator.push_node(Node{
         name: "base".to_string(),
@@ -338,7 +353,7 @@ impl DivGenerator {
 
     pub fn generate_divs(&self, scale: f32) -> String {
         if let Ok(gltf) = &self.gltf {
-            let mut generator = Generator::new(scale);
+            let mut generator = Generator::new(scale, MeshTransparency::Transparent);
             generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true);
             generator.output().to_string()
         } else {

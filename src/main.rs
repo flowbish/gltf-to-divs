@@ -1,6 +1,25 @@
 use clap::{Parser, Subcommand};
 use rendering::{Generator, generate_divs};
 
+#[derive(clap::ValueEnum, Clone, Default, Debug)]
+enum MeshTransparency {
+    /// This model is opaque, so backface culling optimizations may be applied.
+    #[default]
+    Opaque,
+    /// This model or its texture is transparent and requires visibilty of the backs of polygons.
+    /// This must be enabled for blockbench models.
+    Transparent,
+}
+
+impl From<MeshTransparency> for rendering::MeshTransparency {
+    fn from(mesh_transparency: MeshTransparency) -> Self {
+        match mesh_transparency {
+            MeshTransparency::Opaque => Self::Opaque,
+            MeshTransparency::Transparent => Self::Transparent,
+        }
+    }
+}
+
 
 #[derive(Subcommand, Debug)]
 enum Command {
@@ -9,6 +28,8 @@ enum Command {
         scale: Option<f32>,
         #[arg(long)]
         quadify: bool,
+        #[arg(long, help="wahoo")]
+        mesh_transparency: MeshTransparency,
     },
     ListNodes,
 }
@@ -49,8 +70,8 @@ fn main() {
         Command::ListNodes => {
             list_nodes(&gltf);
         }
-        Command::GenerateDivs { scale, quadify } => {
-            let mut generator = Generator::new(scale.unwrap_or(1.0));
+        Command::GenerateDivs { scale, quadify, mesh_transparency } => {
+            let mut generator = Generator::new(scale.unwrap_or(1.0), mesh_transparency.into());
             generate_divs(&mut generator, &gltf, &buffers, &args.nodes, quadify);
             println!("{}", generator.output());
         }
