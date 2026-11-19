@@ -74,26 +74,26 @@ impl Generator {
         self.add_output("</div>");
     }
 
-    fn visit_rectangle(&mut self, rectangle: &Rectangle) {
+    fn visit_face(&mut self, face: &Face, class: &str) {
         let scale = self.scale;
-        let a_x = rectangle.top_left.position[0] * scale;
-        let a_y = rectangle.top_left.position[1] * -scale;
-        let a_z = rectangle.top_left.position[2] * scale;
-        let b_x = rectangle.top_right.position[0] * scale;
-        let b_y = rectangle.top_right.position[1] * -scale;
-        let b_z = rectangle.top_right.position[2] * scale;
-        let c_x = rectangle.bottom_left.position[0] * scale;
-        let c_y = rectangle.bottom_left.position[1] * -scale;
-        let c_z = rectangle.bottom_left.position[2] * scale;
-        let color = rectangle.color.to_string();
-        let texture_image = rectangle.uri.clone().unwrap_or("texture.webp".to_string());
-        let tex_a_s = rectangle.top_left.texture[0];
-        let tex_a_t = rectangle.top_left.texture[1];
-        let tex_b_s = rectangle.top_right.texture[0];
-        let tex_b_t = rectangle.top_right.texture[1];
-        let tex_c_s = rectangle.bottom_left.texture[0];
-        let tex_c_t = rectangle.bottom_left.texture[1];
-        self.add_output(&format!(r#"<div class="rect" style="
+        let a_x = face.b.position[0] * scale;
+        let a_y = face.b.position[1] * -scale;
+        let a_z = face.b.position[2] * scale;
+        let b_x = face.a.position[0] * scale;
+        let b_y = face.a.position[1] * -scale;
+        let b_z = face.a.position[2] * scale;
+        let c_x = face.c.position[0] * scale;
+        let c_y = face.c.position[1] * -scale;
+        let c_z = face.c.position[2] * scale;
+        let color = face.color.to_string();
+        let texture_image = face.uri.clone().unwrap_or("texture.webp".to_string());
+        let tex_a_s = face.b.texture[0];
+        let tex_a_t = face.b.texture[1];
+        let tex_b_s = face.a.texture[0];
+        let tex_b_t = face.a.texture[1];
+        let tex_c_s = face.c.texture[0];
+        let tex_c_t = face.c.texture[1];
+        self.add_output(&format!(r#"<div class="{class}" style="
     --a-x: {a_x};
     --a-y: {a_y};
     --a-z: {a_z};
@@ -114,44 +114,13 @@ impl Generator {
 "></div>"#));
     }
 
+    fn visit_rectangle(&mut self,  rectangle: &Rectangle) {
+        self.visit_face(&rectangle.face, "rect")
+    }
+
     fn visit_triangle(&mut self, triangle: &Triangle) {
-        let scale = self.scale;
-        let a_x = triangle.b.position[0] * scale;
-        let a_y = triangle.b.position[1] * -scale;
-        let a_z = triangle.b.position[2] * scale;
-        let b_x = triangle.a.position[0] * scale;
-        let b_y = triangle.a.position[1] * -scale;
-        let b_z = triangle.a.position[2] * scale;
-        let c_x = triangle.c.position[0] * scale;
-        let c_y = triangle.c.position[1] * -scale;
-        let c_z = triangle.c.position[2] * scale;
-        let color = triangle.color.to_string();
-        let texture_image = triangle.uri.clone().unwrap_or("texture.webp".to_string());
-        let tex_a_s = triangle.b.texture[0];
-        let tex_a_t = triangle.b.texture[1];
-        let tex_b_s = triangle.a.texture[0];
-        let tex_b_t = triangle.a.texture[1];
-        let tex_c_s = triangle.c.texture[0];
-        let tex_c_t = triangle.c.texture[1];
-        self.add_output(&format!(r#"<div class="tri" style="
-    --a-x: {a_x};
-    --a-y: {a_y};
-    --a-z: {a_z};
-    --b-x: {b_x};
-    --b-y: {b_y};
-    --b-z: {b_z};
-    --c-x: {c_x};
-    --c-y: {c_y};
-    --c-z: {c_z};
-    --texture-background-color: {color};
-    --texture-image: url({texture_image});
-    --texture-a-s: {tex_a_s};
-    --texture-a-t: {tex_a_t};
-    --texture-b-s: {tex_b_s};
-    --texture-b-t: {tex_b_t};
-    --texture-c-s: {tex_c_s};
-    --texture-c-t: {tex_c_t};
-"></div>"#));
+        self.visit_face(&triangle.face, "tri")
+
     }
 }
 
@@ -184,7 +153,7 @@ impl std::fmt::Display for Color {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct Triangle {
+struct Face {
     a: Position,
     b: Position,
     c: Position,
@@ -192,11 +161,15 @@ struct Triangle {
     color: Color,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct Triangle {
+    face: Face,
+}
+
 impl Triangle {
-    fn merge(&self, other: &Triangle, uri: Option<String>) -> Option<Rectangle> {
-        if self.b == other.a && self.c == other.c {
-            let _bottom_right = other.b;
-            Some(Rectangle { top_left: self.a, top_right: self.b, bottom_left: self.c, uri, color: self.color})
+    fn merge(&self, other: &Triangle) -> Option<Rectangle> {
+        if self.face.b == other.face.a && self.face.c == other.face.c {
+            Some(Rectangle { face: self.face.clone() })
         } else {
             None
         }
@@ -205,11 +178,7 @@ impl Triangle {
 
 #[derive(Debug, Clone)]
 struct Rectangle {
-    top_left: Position,
-    top_right: Position,
-    bottom_left: Position,
-    uri: Option<String>,
-    color: Color,
+    face: Face,
 }
 
 fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &Vec<u32>, tex_coords: &Vec<[f32; 2]>) -> Vec<Triangle> {
@@ -236,11 +205,13 @@ fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &V
             let b = chunk[1] as usize;
             let c = chunk[2] as usize;
             Triangle {
-                a: Position{position: positions[a], texture: tex_coords[a]},
-                b: Position{position: positions[b], texture: tex_coords[b]},
-                c: Position{position: positions[c], texture: tex_coords[c]},
-                uri: uri.clone(),
-                color,
+                face: Face {
+                    a: Position{position: positions[a], texture: tex_coords[a]},
+                    b: Position{position: positions[b], texture: tex_coords[b]},
+                    c: Position{position: positions[c], texture: tex_coords[c]},
+                    uri: uri.clone(),
+                    color,
+                }
             }
         })
         .collect()
@@ -256,7 +227,7 @@ fn sort_rectangles(triangles: Vec<Triangle>) -> Vec<Rectangle> {
         .collect();
 
     for (left, right) in tri_pairs {
-        if let Some(rect) = left.merge(&right, left.uri.clone()) {
+        if let Some(rect) = left.merge(&right) {
             rectangles.push(rect);
         } else {
             eprintln!("Failed to merge");
@@ -339,6 +310,7 @@ struct ImportedGltf {
     buffers: Vec<buffer::Data>,
     _images: Vec<image::Data>,
 }
+
 #[wasm_bindgen]
 pub struct DivGenerator {
     gltf: Result<ImportedGltf, String>,
