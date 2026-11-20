@@ -321,8 +321,6 @@ pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: 
         }
     }
     generator.pop_node();
-
-    println!("{}", &generator.output);
 }
 
 struct ImportedGltf {
