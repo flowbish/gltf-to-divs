@@ -92,24 +92,29 @@ impl Generator {
         }
         let classes = classes.join(" ");
 
+        // TODO: add an argument to reverse b and c.
+        let a = face.a;
+        let b = face.b;
+        let c = face.c;
+
         let scale = self.scale;
-        let a_x = face.b.position[0] * scale;
-        let a_y = face.b.position[1] * -scale;
-        let a_z = face.b.position[2] * scale;
-        let b_x = face.a.position[0] * scale;
-        let b_y = face.a.position[1] * -scale;
-        let b_z = face.a.position[2] * scale;
-        let c_x = face.c.position[0] * scale;
-        let c_y = face.c.position[1] * -scale;
-        let c_z = face.c.position[2] * scale;
+        let a_y = b.position[1] * -scale;
+        let a_z = b.position[2] * scale;
+        let b_x = a.position[0] * scale;
+        let b_y = a.position[1] * -scale;
+        let b_z = a.position[2] * scale;
+        let c_x = c.position[0] * scale;
+        let c_y = c.position[1] * -scale;
+        let c_z = c.position[2] * scale;
+        let a_x = b.position[0] * scale;
         let color = face.color.to_string();
         let texture_image = face.uri.clone().unwrap_or("texture.webp".to_string());
-        let tex_a_s = face.b.texture[0];
-        let tex_a_t = face.b.texture[1];
-        let tex_b_s = face.a.texture[0];
-        let tex_b_t = face.a.texture[1];
-        let tex_c_s = face.c.texture[0];
-        let tex_c_t = face.c.texture[1];
+        let tex_a_s = b.texture[0];
+        let tex_a_t = b.texture[1];
+        let tex_b_s = a.texture[0];
+        let tex_b_t = a.texture[1];
+        let tex_c_s = c.texture[0];
+        let tex_c_t = c.texture[1];
         self.add_output(&format!(r#"<div class="{classes}" style="
     --a-x: {a_x};
     --a-y: {a_y};
