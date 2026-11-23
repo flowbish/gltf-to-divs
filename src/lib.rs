@@ -51,10 +51,20 @@ impl GeneratorOutputWalker {
         &self.output
     }
 
-    fn visit_node_start(&mut self, node: &Node, scale: f32) {
+    fn visit_node_start(&mut self, node: &Node, textures_to_output: &Vec<usize>, textures: &HashMap<usize, Texture>, scale: f32) {
         let name = &node.name;
 
         self.add_output(&format!(r#"<div class="node {name}" style=""#));
+
+        for texture_index in textures_to_output {
+            let texture_image = textures.get(&texture_index).and_then(
+                |texture| texture.uri.clone()
+            );
+            if let Some(uri) = texture_image {
+                self.add_output(&format!("  --texture-{texture_index}: url({uri});"));
+            }
+        }
+
         self.add_output(&format!("  transform:"));
 
         let [x, y, z] = node.transforms.translation;
@@ -85,7 +95,7 @@ impl GeneratorOutputWalker {
         self.add_output("</div>");
     }
 
-    fn visit_face(&mut self, face: &Face, class: &str, textures: &HashMap<usize, Texture>, scale: f32, mesh_transparency: MeshTransparency) {
+    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency) {
         let mut classes = vec![class];
         if mesh_transparency == MeshTransparency::Opaque {
             classes.push("opaque");
@@ -98,46 +108,46 @@ impl GeneratorOutputWalker {
         let c = face.c;
 
         let scale = scale;
-        let a_y = b.position[1] * -scale;
-        let a_z = b.position[2] * scale;
-        let b_x = a.position[0] * scale;
-        let b_y = a.position[1] * -scale;
-        let b_z = a.position[2] * scale;
+        let a_x = a.position[0] * scale;
+        let a_y = a.position[1] * -scale;
+        let a_z = a.position[2] * scale;
+        let b_x = b.position[0] * scale;
+        let b_y = b.position[1] * -scale;
+        let b_z = b.position[2] * scale;
         let c_x = c.position[0] * scale;
         let c_y = c.position[1] * -scale;
         let c_z = c.position[2] * scale;
-        let a_x = b.position[0] * scale;
         let color = face.color.to_string();
-        let texture_image = face.texture_index.and_then(
-            |idx| textures.get(&idx)
-        ).and_then(
-            |texture| texture.uri.clone()
-        ).unwrap_or("texture.webp".to_string());
-        let tex_a_s = b.texture[0];
-        let tex_a_t = b.texture[1];
-        let tex_b_s = a.texture[0];
-        let tex_b_t = a.texture[1];
+        let texture_var = face.texture_index.map(
+            |idx| format!("--texture-{idx}")
+        );
+        let tex_a_s = a.texture[0];
+        let tex_a_t = a.texture[1];
+        let tex_b_s = b.texture[0];
+        let tex_b_t = b.texture[1];
         let tex_c_s = c.texture[0];
         let tex_c_t = c.texture[1];
-        self.add_output(&format!(r#"<div class="{classes}" style="
-    --a-x: {a_x};
-    --a-y: {a_y};
-    --a-z: {a_z};
-    --b-x: {b_x};
-    --b-y: {b_y};
-    --b-z: {b_z};
-    --c-x: {c_x};
-    --c-y: {c_y};
-    --c-z: {c_z};
-    --texture-background-color: {color};
-    --texture-image: url({texture_image});
-    --texture-a-s: {tex_a_s};
-    --texture-a-t: {tex_a_t};
-    --texture-b-s: {tex_b_s};
-    --texture-b-t: {tex_b_t};
-    --texture-c-s: {tex_c_s};
-    --texture-c-t: {tex_c_t};
-"></div>"#));
+        self.add_output(&format!(r#"<div class="{classes}" style=""#));
+        self.add_output(&format!("--a-x: {a_x};"));
+        self.add_output(&format!("--a-y: {a_y};"));
+        self.add_output(&format!("--a-z: {a_z};"));
+        self.add_output(&format!("--b-x: {b_x};"));
+        self.add_output(&format!("--b-y: {b_y};"));
+        self.add_output(&format!("--b-z: {b_z};"));
+        self.add_output(&format!("--c-x: {c_x};"));
+        self.add_output(&format!("--c-y: {c_y};"));
+        self.add_output(&format!("--c-z: {c_z};"));
+        self.add_output(&format!("--texture-background-color: {color};"));
+        if let Some(texture_var) = texture_var {
+            self.add_output(&format!("--texture-image: var({texture_var});"));
+        }
+        self.add_output(&format!("--texture-a-s: {tex_a_s};"));
+        self.add_output(&format!("--texture-a-t: {tex_a_t};"));
+        self.add_output(&format!("--texture-b-s: {tex_b_s};"));
+        self.add_output(&format!("--texture-b-t: {tex_b_t};"));
+        self.add_output(&format!("--texture-c-s: {tex_c_s};"));
+        self.add_output(&format!("--texture-c-t: {tex_c_t};"));
+        self.add_output(r#""></div>"#);
     }
 
 }
@@ -166,12 +176,17 @@ impl GeneratorFace {
 #[derive(Debug, Clone)]
 struct GeneratorNode {
     node: Node,
+    textures_to_output: Vec<usize>,
     children: Vec<GeneratorChild>,
 }
 
 impl GeneratorNode {
     fn new(node: Node) -> Self {
-        Self { node, children: Vec::new() }
+        Self { 
+            node, 
+            textures_to_output: Vec::new(),
+            children: Vec::new(),
+        }
     }
 }
 
@@ -196,11 +211,11 @@ impl Generator {
     }
 
     fn output_recursive(&self, output: &mut GeneratorOutputWalker, node: &GeneratorNode) {
-        output.visit_node_start(&node.node, self.scale);
+        output.visit_node_start(&node.node, &node.textures_to_output, &self.textures, self.scale);
         for child in &node.children {
             match child {
                 GeneratorChild::Node(node) => self.output_recursive(output, &*node.borrow()),
-                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, &self.textures, self.scale, self.mesh_transparency),
+                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency),
             }
         }
         output.visit_node_end();
@@ -214,6 +229,8 @@ impl Generator {
 
     fn visit_texture(&mut self, index: usize, texture: Texture) {
         self.textures.insert(index, texture);
+        let top = self.node_stack.last().unwrap();
+        top.borrow_mut().textures_to_output.push(index);
     }
 
     fn push_node(&mut self, node: Node) {
