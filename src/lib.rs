@@ -21,7 +21,7 @@ pub enum MeshTransparency {
 
 #[derive(Debug, Clone)]
 struct Texture {
-    uri: String,
+    uri: Option<String>,
 }
 
 struct GeneratorOutputWalker {
@@ -85,7 +85,7 @@ impl GeneratorOutputWalker {
         self.add_output("</div>");
     }
 
-    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency) {
+    fn visit_face(&mut self, face: &Face, class: &str, textures: &HashMap<usize, Texture>, scale: f32, mesh_transparency: MeshTransparency) {
         let mut classes = vec![class];
         if mesh_transparency == MeshTransparency::Opaque {
             classes.push("opaque");
@@ -108,7 +108,11 @@ impl GeneratorOutputWalker {
         let c_z = c.position[2] * scale;
         let a_x = b.position[0] * scale;
         let color = face.color.to_string();
-        let texture_image = face.uri.clone().unwrap_or("texture.webp".to_string());
+        let texture_image = face.texture_index.and_then(
+            |idx| textures.get(&idx)
+        ).and_then(
+            |texture| texture.uri.clone()
+        ).unwrap_or("texture.webp".to_string());
         let tex_a_s = b.texture[0];
         let tex_a_t = b.texture[1];
         let tex_b_s = a.texture[0];
@@ -172,6 +176,7 @@ impl GeneratorNode {
 }
 
 pub struct Generator {
+    textures: HashMap<usize, Texture>,
     base: Rc<RefCell<GeneratorNode>>,
     node_stack: Vec<Rc<RefCell<GeneratorNode>>>,
     scale: f32,
@@ -182,6 +187,7 @@ impl Generator {
     pub fn new(scale: f32, mesh_transparency: MeshTransparency) -> Self {
         let base = Rc::new(RefCell::new(GeneratorNode::new(Node::base())));
         Self {
+            textures: HashMap::new(),
             base: base.clone(),
             node_stack: vec![base.clone()],
             scale,
@@ -194,7 +200,7 @@ impl Generator {
         for child in &node.children {
             match child {
                 GeneratorChild::Node(node) => self.output_recursive(output, &*node.borrow()),
-                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency),
+                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, &self.textures, self.scale, self.mesh_transparency),
             }
         }
         output.visit_node_end();
@@ -204,6 +210,10 @@ impl Generator {
         let mut output = GeneratorOutputWalker::new();
         self.output_recursive(&mut output, &*self.base.borrow());
         output.output().to_string()
+    }
+
+    fn visit_texture(&mut self, index: usize, texture: Texture) {
+        self.textures.insert(index, texture);
     }
 
     fn push_node(&mut self, node: Node) {
@@ -280,7 +290,7 @@ struct Face {
     a: Position,
     b: Position,
     c: Position,
-    uri: Option<String>,
+    texture_index: Option<usize>,
     color: Color,
 }
 
@@ -309,16 +319,9 @@ fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &V
     let [r, g, b, a] = [(rf * 255f32) as u8, (gf * 255f32) as u8, (bf * 255f32) as u8, (af * 255f32) as u8];
     let color = Color { r, g, b, a };
 
-    let uri = material.pbr_metallic_roughness().base_color_texture().and_then(
-        |info| info.texture().source()
-    ).and_then(|image| {
-        match image.source() {
-            Source::Uri { uri, .. } => {
-                Some(uri.to_string())
-            }
-            _ => None,
-        }
-    });
+    let texture_index = material.pbr_metallic_roughness().base_color_texture().and_then(
+        |info| Some(info.texture().index())
+    );
 
     indices
         .as_slice()
@@ -332,7 +335,7 @@ fn make_triangles(material: Material<'_>, positions: &Vec<[f32; 3]>, indices: &V
                     a: Position{position: positions[a], texture: tex_coords[a]},
                     b: Position{position: positions[b], texture: tex_coords[b]},
                     c: Position{position: positions[c], texture: tex_coords[c]},
-                    uri: uri.clone(),
+                    texture_index,
                     color,
                 }
             }
@@ -411,6 +414,18 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
 }
 
 pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
+    for texture in gltf.textures() {
+        let uri = texture.source().and_then(
+            |image| {
+                match image.source() {
+                    Source::Uri { uri, .. } => Some(uri.to_string()),
+                    _ => None,
+                }
+            }
+        );
+        generator.visit_texture(texture.index(), Texture { uri });
+    }
+
     for scene in gltf.scenes() {
         for node in scene.nodes() {
             visit_children(generator, &node, &buffers, desired_nodes, quadify);
