@@ -64,31 +64,52 @@ impl GeneratorOutputWalker {
                 self.add_output(&format!("  --texture-{texture_index}: url({uri});"));
             }
         }
-
+        
+        // base scale
         if let Some(scale) = scale {
             self.add_output(&format!("  --base-scale: {scale};"));
         }
 
-        self.add_output(&format!("  transform:"));
-
+        // translation
         let [x, y, z] = node.transforms.translation;
-        self.add_output(&format!("    translate3d("));
-        self.add_output(&format!("      calc({x} * var(--base-scale) * 1px + var(--node-translate-x)),"));
-        self.add_output(&format!("      calc({y} * var(--base-scale) * -1px + var(--node-translate-y)),"));
-        self.add_output(&format!("      calc({z} * var(--base-scale) * 1px + var(--node-translate-z))"));
-        self.add_output(&format!("    )"));
+        if x != 0.0 {
+            self.add_output(&format!("  --node-inherent-translate-x: {x}"));
+        }
+        if y != 0.0 {
+            self.add_output(&format!("  --node-inherent-translate-y: {y}"));
+        }
+        if z != 0.0 {
+            self.add_output(&format!("  --node-inherent-translate-z: {z}"));
+        }
 
         let [x, y, z, w] = node.transforms.rotation;
         let y = -1.0 * y;
-        self.add_output(&format!("    rotate3d({x}, {y}, {z}, calc(-2 * acos({w})))"));
-
-        // Custom animatable rotation
-        self.add_output(&format!("    rotate3d(var(--node-rotation-x), var(--node-rotation-y), var(--node-rotation-z), var(--node-rotation-angle))"));
+        if x != 0.0 {
+            self.add_output(&format!("  --node-inherent-rotation-x: {x}"));
+        }
+        if y != 0.0 {
+            self.add_output(&format!("  --node-inherent-rotation-y: {y}"));
+        }
+        if z != 0.0 {
+            self.add_output(&format!("  --node-inherent-rotation-z: {z}"));
+        }        
+        let angle = -2.0 * w.acos();
+        if angle != 0.0 {
+            self.add_output(&format!("  --node-inherent-rotation-angle: {w}"));
+        }
 
         let [x, y, z] = node.transforms.scale;
-        self.add_output(&format!("    scale3d(calc({x} * var(--node-scale)), calc({y} * var(--node-scale)), calc({z} * var(--node-scale)));"));
+        if x != 1.0 {
+            self.add_output(&format!("  --node-inherent-scale-x: {x}"));
+        }
+        if y != 1.0 {
+            self.add_output(&format!("  --node-inherent-scale-y: {y}"));
+        }
+        if z != 1.0 {
+            self.add_output(&format!("  --node-inherent-scale-z: {z}"));
+        }
 
-        self.add_output(&format!(r#"">"#));
+        self.add_output("\">");
         
         self.indentation += 1;
     }
