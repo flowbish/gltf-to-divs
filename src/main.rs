@@ -25,6 +25,8 @@ impl From<MeshTransparency> for rendering::MeshTransparency {
 enum Command {
     GenerateDivs {
         #[arg(long)]
+        exclude_node: Vec<String>,
+        #[arg(long)]
         scale: Option<f32>,
         #[arg(long)]
         quadify: bool,
@@ -72,9 +74,9 @@ fn main() {
         Command::ListNodes => {
             list_nodes(&gltf);
         }
-        Command::GenerateDivs { scale, quadify, mesh_transparency, reverse_orientation } => {
+        Command::GenerateDivs { exclude_node, scale, quadify, mesh_transparency, reverse_orientation } => {
             let mut generator = Generator::new(scale.unwrap_or(1.0), mesh_transparency.into(), reverse_orientation);
-            generate_divs(&mut generator, &gltf, &buffers, &args.nodes, quadify);
+            generate_divs(&mut generator, &gltf, &buffers, &args.nodes, &exclude_node, quadify);
             println!("{}", generator.output());
         }
     }

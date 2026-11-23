@@ -382,10 +382,10 @@ fn sort_rectangles(triangles: Vec<Triangle>) -> Vec<Rectangle> {
     rectangles
 }
 
-fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
+fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, exclude_nodes: &Vec<String>, quadify: bool) {
     let name = node.name().unwrap_or("N/A");
 
-    if !desired_nodes.is_empty() && !desired_nodes.contains(&name.to_string()) {
+    if !desired_nodes.is_empty() && !desired_nodes.contains(&name.to_string()) || exclude_nodes.contains(&name.to_string()) {
         return;
     }
     
@@ -427,13 +427,13 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
     }
 
     for child in node.children() {
-        visit_children(generator, &child, buffers, desired_nodes, quadify);
+        visit_children(generator, &child, buffers, desired_nodes, exclude_nodes, quadify);
     }
 
     generator.pop_node();
 }
 
-pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
+pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, exclude_nodes: &Vec<String>, quadify: bool) {
     for texture in gltf.textures() {
         let uri = texture.source().and_then(
             |image| {
@@ -448,7 +448,7 @@ pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: 
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
-            visit_children(generator, &node, &buffers, desired_nodes, quadify);
+            visit_children(generator, &node, &buffers, desired_nodes, exclude_nodes, quadify);
         }
     }
 }
@@ -487,7 +487,7 @@ impl DivGenerator {
     pub fn generate_divs(&self, scale: f32) -> String {
         if let Ok(gltf) = &self.gltf {
             let mut generator = Generator::new(scale, MeshTransparency::Transparent, false /* reverse_orientation */);
-            generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true /* quadify */);
+            generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), &Vec::new(), true /* quadify */);
             generator.output().to_string()
         } else {
             String::new()
