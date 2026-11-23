@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use gltf::buffer;
 use gltf::image;
 use gltf::Material;
@@ -6,13 +10,7 @@ use gltf::Document;
 
 use wasm_bindgen::prelude::*;
 
-#[derive(Debug, Clone)]
-struct Node {
-    name: String,
-    transforms: Transforms,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MeshTransparency {
     /// This model is opaque, so backface culling optimizations may be applied.
     Opaque,
@@ -21,26 +19,27 @@ pub enum MeshTransparency {
     Transparent,
 }
 
-pub struct Generator {
-    nodes: Vec<Node>,
-    output: String,
-    scale: f32,
-    mesh_transparency: MeshTransparency,
+#[derive(Debug, Clone)]
+struct Texture {
+    uri: String,
 }
 
-impl Generator {
-    pub fn new(scale: f32, mesh_transparency: MeshTransparency) -> Self {
+struct GeneratorOutputWalker {
+    indentation: usize,
+    output: String,
+}
+
+impl GeneratorOutputWalker {
+    fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            indentation: 0,
             output: String::new(),
-            scale,
-            mesh_transparency,
         }
     }
 
     fn add_output(&mut self, output: &str) {
         for line in output.lines() {
-            for _ in &self.nodes {
+            for _ in 0..self.indentation {
                 self.output.push_str("  ");
             }
             self.output.push_str(line);
@@ -52,14 +51,14 @@ impl Generator {
         &self.output
     }
 
-    fn push_node(&mut self, node: Node) {
+    fn visit_node_start(&mut self, node: &Node, scale: f32) {
         let name = &node.name;
 
         self.add_output(&format!(r#"<div class="node {name}" style=""#));
         self.add_output(&format!("  transform:"));
 
         let [x, y, z] = node.transforms.translation;
-        let scale = self.scale;
+        let scale = scale;
         self.add_output(&format!("    translate3d("));
         self.add_output(&format!("      calc({x} * {scale} * 1px + var(--node-translate-x)),"));
         self.add_output(&format!("      calc({y} * {scale} * -1px + var(--node-translate-y)),"));
@@ -77,17 +76,18 @@ impl Generator {
         self.add_output(&format!("    scale3d(calc({x} * var(--node-scale)), calc({y} * var(--node-scale)), calc({z} * var(--node-scale)));"));
 
         self.add_output(&format!(r#"">"#));
-        self.nodes.push(node);
+        
+        self.indentation += 1;
     }
 
-    fn pop_node(&mut self) {
-        self.nodes.pop();
+    fn visit_node_end(&mut self) {
+        self.indentation -= 1;
         self.add_output("</div>");
     }
 
-    fn visit_face(&mut self, face: &Face, class: &str) {
+    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency) {
         let mut classes = vec![class];
-        if self.mesh_transparency == MeshTransparency::Opaque {
+        if mesh_transparency == MeshTransparency::Opaque {
             classes.push("opaque");
         }
         let classes = classes.join(" ");
@@ -97,7 +97,7 @@ impl Generator {
         let b = face.b;
         let c = face.c;
 
-        let scale = self.scale;
+        let scale = scale;
         let a_y = b.position[1] * -scale;
         let a_z = b.position[2] * scale;
         let b_x = a.position[0] * scale;
@@ -136,12 +136,98 @@ impl Generator {
 "></div>"#));
     }
 
+}
+
+#[derive(Debug, Clone)]
+enum GeneratorChild {
+    Node(Rc<RefCell<GeneratorNode>>),
+    Face(GeneratorFace),
+}
+
+#[derive(Debug, Clone)]
+struct GeneratorFace {
+    face: Face,
+    class: &'static str,
+}
+
+impl GeneratorFace {
+    fn new(face: Face, class: &'static str) -> Self {
+        Self { 
+            face,
+            class,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GeneratorNode {
+    node: Node,
+    children: Vec<GeneratorChild>,
+}
+
+impl GeneratorNode {
+    fn new(node: Node) -> Self {
+        Self { node, children: Vec::new() }
+    }
+}
+
+pub struct Generator {
+    base: Rc<RefCell<GeneratorNode>>,
+    node_stack: Vec<Rc<RefCell<GeneratorNode>>>,
+    scale: f32,
+    mesh_transparency: MeshTransparency,
+}
+
+impl Generator {
+    pub fn new(scale: f32, mesh_transparency: MeshTransparency) -> Self {
+        let base = Rc::new(RefCell::new(GeneratorNode::new(Node::base())));
+        Self {
+            base: base.clone(),
+            node_stack: vec![base.clone()],
+            scale,
+            mesh_transparency,
+        }
+    }
+
+    fn output_recursive(&self, output: &mut GeneratorOutputWalker, node: &GeneratorNode) {
+        output.visit_node_start(&node.node, self.scale);
+        for child in &node.children {
+            match child {
+                GeneratorChild::Node(node) => self.output_recursive(output, &*node.borrow()),
+                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency),
+            }
+        }
+        output.visit_node_end();
+    }
+
+    pub fn output(&self) -> String {
+        let mut output = GeneratorOutputWalker::new();
+        self.output_recursive(&mut output, &*self.base.borrow());
+        output.output().to_string()
+    }
+
+    fn push_node(&mut self, node: Node) {
+        let top = self.node_stack.last().unwrap();
+        let node = Rc::new(RefCell::new(GeneratorNode::new(node)));
+        top.borrow_mut().children.push(GeneratorChild::Node(node.clone()));
+        self.node_stack.push(node);
+    }
+
+    fn pop_node(&mut self) {
+        self.node_stack.pop();
+    }
+
+    fn visit_face(&mut self, face: Face, class: &'static str) {
+        let top = self.node_stack.last().unwrap();
+        top.borrow_mut().children.push(GeneratorChild::Face(GeneratorFace::new(face, class)));
+    }
+
     fn visit_rectangle(&mut self,  rectangle: &Rectangle) {
-        self.visit_face(&rectangle.face, "rect")
+        self.visit_face(rectangle.face.clone(), "rect")
     }
 
     fn visit_triangle(&mut self, triangle: &Triangle) {
-        self.visit_face(&triangle.face, "tri")
+        self.visit_face(triangle.face.clone(), "tri")
 
     }
 }
@@ -151,6 +237,21 @@ struct Transforms {
     translation: [f32; 3],
     rotation: [f32; 4],
     scale: [f32; 3],
+}
+
+#[derive(Debug, Clone)]
+struct Node {
+    name: String,
+    transforms: Transforms,
+}
+
+impl Node {
+    fn base() -> Self {
+        Self {
+            name: "base".to_string(),
+            transforms: Transforms { translation: [0.0, 0.0, 0.0], rotation: [0.0, 0.0, 0.0, 1.0], scale: [1.0, 1.0, 1.0] },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -310,17 +411,11 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
 }
 
 pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, quadify: bool) {
-    let scale = 1.0;
-    generator.push_node(Node{
-        name: "base".to_string(),
-        transforms: Transforms { translation: [0.0, 0.0, 0.0], rotation: [0.0, 0.0, 0.0, 1.0], scale: [scale, scale, scale] },
-    });
     for scene in gltf.scenes() {
         for node in scene.nodes() {
             visit_children(generator, &node, &buffers, desired_nodes, quadify);
         }
     }
-    generator.pop_node();
 }
 
 struct ImportedGltf {
