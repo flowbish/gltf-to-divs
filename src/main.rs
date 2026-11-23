@@ -28,8 +28,10 @@ enum Command {
         scale: Option<f32>,
         #[arg(long)]
         quadify: bool,
-        #[arg(long, help="wahoo")]
+        #[arg(long, help="Setting mesh transparency to transparent allow the back face of faces to show.")]
         mesh_transparency: MeshTransparency,
+        #[arg(long, help="Reverse the orientation of faces. Necessary if your model has a y-negative winding (like blockbench models) and you choose an opaque mesh.")]
+        reverse_orientation: bool,
     },
     ListNodes,
 }
@@ -70,8 +72,8 @@ fn main() {
         Command::ListNodes => {
             list_nodes(&gltf);
         }
-        Command::GenerateDivs { scale, quadify, mesh_transparency } => {
-            let mut generator = Generator::new(scale.unwrap_or(1.0), mesh_transparency.into());
+        Command::GenerateDivs { scale, quadify, mesh_transparency, reverse_orientation } => {
+            let mut generator = Generator::new(scale.unwrap_or(1.0), mesh_transparency.into(), reverse_orientation);
             generate_divs(&mut generator, &gltf, &buffers, &args.nodes, quadify);
             println!("{}", generator.output());
         }

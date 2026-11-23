@@ -95,7 +95,7 @@ impl GeneratorOutputWalker {
         self.add_output("</div>");
     }
 
-    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency) {
+    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency, reverse_orientation: bool) {
         let mut classes = vec![class];
         if mesh_transparency == MeshTransparency::Opaque {
             classes.push("opaque");
@@ -104,8 +104,8 @@ impl GeneratorOutputWalker {
 
         // TODO: add an argument to reverse b and c.
         let a = face.a;
-        let b = face.b;
-        let c = face.c;
+        let b = if reverse_orientation { face.c } else { face.b };
+        let c = if reverse_orientation { face.b } else { face.c };
 
         let scale = scale;
         let a_x = a.position[0] * scale;
@@ -196,10 +196,11 @@ pub struct Generator {
     node_stack: Vec<Rc<RefCell<GeneratorNode>>>,
     scale: f32,
     mesh_transparency: MeshTransparency,
+    reverse_orientation: bool
 }
 
 impl Generator {
-    pub fn new(scale: f32, mesh_transparency: MeshTransparency) -> Self {
+    pub fn new(scale: f32, mesh_transparency: MeshTransparency, reverse_orientation: bool) -> Self {
         let base = Rc::new(RefCell::new(GeneratorNode::new(Node::base())));
         Self {
             textures: HashMap::new(),
@@ -207,6 +208,7 @@ impl Generator {
             node_stack: vec![base.clone()],
             scale,
             mesh_transparency,
+            reverse_orientation,
         }
     }
 
@@ -215,7 +217,7 @@ impl Generator {
         for child in &node.children {
             match child {
                 GeneratorChild::Node(node) => self.output_recursive(output, &*node.borrow()),
-                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency),
+                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency, self.reverse_orientation),
             }
         }
         output.visit_node_end();
@@ -483,8 +485,8 @@ impl DivGenerator {
 
     pub fn generate_divs(&self, scale: f32) -> String {
         if let Ok(gltf) = &self.gltf {
-            let mut generator = Generator::new(scale, MeshTransparency::Transparent);
-            generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true);
+            let mut generator = Generator::new(scale, MeshTransparency::Transparent, false /* reverse_orientation */);
+            generate_divs(&mut generator, &gltf.document, &gltf.buffers, &Vec::new(), true /* quadify */);
             generator.output().to_string()
         } else {
             String::new()
