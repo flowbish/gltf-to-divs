@@ -137,9 +137,10 @@ impl GeneratorOutputWalker {
         self.add_output(&format!("--c-x: {c_x};"));
         self.add_output(&format!("--c-y: {c_y};"));
         self.add_output(&format!("--c-z: {c_z};"));
-        self.add_output(&format!("--texture-background-color: {color};"));
         if let Some(texture_var) = texture_var {
             self.add_output(&format!("--texture-image: var({texture_var});"));
+        } else {
+            self.add_output(&format!("--texture-background-color: {color};"));
         }
         self.add_output(&format!("--texture-a-s: {tex_a_s};"));
         self.add_output(&format!("--texture-a-t: {tex_a_t};"));
