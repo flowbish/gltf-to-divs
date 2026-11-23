@@ -51,7 +51,7 @@ impl GeneratorOutputWalker {
         &self.output
     }
 
-    fn visit_node_start(&mut self, node: &Node, textures_to_output: &Vec<usize>, textures: &HashMap<usize, Texture>, scale: f32) {
+    fn visit_node_start(&mut self, node: &Node, textures_to_output: &Vec<usize>, textures: &HashMap<usize, Texture>, scale: Option<f32>) {
         let name = &node.name;
 
         self.add_output(&format!(r#"<div class="node {name}" style=""#));
@@ -65,14 +65,17 @@ impl GeneratorOutputWalker {
             }
         }
 
+        if let Some(scale) = scale {
+            self.add_output(&format!("  --base-scale: {scale};"));
+        }
+
         self.add_output(&format!("  transform:"));
 
         let [x, y, z] = node.transforms.translation;
-        let scale = scale;
         self.add_output(&format!("    translate3d("));
-        self.add_output(&format!("      calc({x} * {scale} * 1px + var(--node-translate-x)),"));
-        self.add_output(&format!("      calc({y} * {scale} * -1px + var(--node-translate-y)),"));
-        self.add_output(&format!("      calc({z} * {scale} * 1px + var(--node-translate-z))"));
+        self.add_output(&format!("      calc({x} * var(--base-scale) * 1px + var(--node-translate-x)),"));
+        self.add_output(&format!("      calc({y} * var(--base-scale) * -1px + var(--node-translate-y)),"));
+        self.add_output(&format!("      calc({z} * var(--base-scale) * 1px + var(--node-translate-z))"));
         self.add_output(&format!("    )"));
 
         let [x, y, z, w] = node.transforms.rotation;
@@ -95,7 +98,7 @@ impl GeneratorOutputWalker {
         self.add_output("</div>");
     }
 
-    fn visit_face(&mut self, face: &Face, class: &str, scale: f32, mesh_transparency: MeshTransparency, reverse_orientation: bool) {
+    fn visit_face(&mut self, face: &Face, class: &str, mesh_transparency: MeshTransparency, reverse_orientation: bool) {
         let mut classes = vec![class];
         if mesh_transparency == MeshTransparency::Opaque {
             classes.push("opaque");
@@ -107,16 +110,15 @@ impl GeneratorOutputWalker {
         let b = if reverse_orientation { face.c } else { face.b };
         let c = if reverse_orientation { face.b } else { face.c };
 
-        let scale = scale;
-        let a_x = a.position[0] * scale;
-        let a_y = a.position[1] * -scale;
-        let a_z = a.position[2] * scale;
-        let b_x = b.position[0] * scale;
-        let b_y = b.position[1] * -scale;
-        let b_z = b.position[2] * scale;
-        let c_x = c.position[0] * scale;
-        let c_y = c.position[1] * -scale;
-        let c_z = c.position[2] * scale;
+        let a_x = a.position[0];
+        let a_y = a.position[1] * -1.0;
+        let a_z = a.position[2];
+        let b_x = b.position[0];
+        let b_y = b.position[1] * -1.0;
+        let b_z = b.position[2];
+        let c_x = c.position[0];
+        let c_y = c.position[1] * -1.0;
+        let c_z = c.position[2];
         let color = face.color.to_string();
         let texture_var = face.texture_index.map(
             |idx| format!("--texture-{idx}")
@@ -128,15 +130,15 @@ impl GeneratorOutputWalker {
         let tex_c_s = c.texture[0];
         let tex_c_t = c.texture[1];
         self.add_output(&format!(r#"<div class="{classes}" style=""#));
-        self.add_output(&format!("--a-x: {a_x};"));
-        self.add_output(&format!("--a-y: {a_y};"));
-        self.add_output(&format!("--a-z: {a_z};"));
-        self.add_output(&format!("--b-x: {b_x};"));
-        self.add_output(&format!("--b-y: {b_y};"));
-        self.add_output(&format!("--b-z: {b_z};"));
-        self.add_output(&format!("--c-x: {c_x};"));
-        self.add_output(&format!("--c-y: {c_y};"));
-        self.add_output(&format!("--c-z: {c_z};"));
+        self.add_output(&format!("--a-x: calc(var(--base-scale) * {a_x});"));
+        self.add_output(&format!("--a-y: calc(var(--base-scale) * {a_y});"));
+        self.add_output(&format!("--a-z: calc(var(--base-scale) * {a_z});"));
+        self.add_output(&format!("--b-x: calc(var(--base-scale) * {b_x});"));
+        self.add_output(&format!("--b-y: calc(var(--base-scale) * {b_y});"));
+        self.add_output(&format!("--b-z: calc(var(--base-scale) * {b_z});"));
+        self.add_output(&format!("--c-x: calc(var(--base-scale) * {c_x});"));
+        self.add_output(&format!("--c-y: calc(var(--base-scale) * {c_y});"));
+        self.add_output(&format!("--c-z: calc(var(--base-scale) * {c_z});"));
         if let Some(texture_var) = texture_var {
             self.add_output(&format!("--texture-image: var({texture_var});"));
         } else {
@@ -178,6 +180,7 @@ impl GeneratorFace {
 struct GeneratorNode {
     node: Node,
     textures_to_output: Vec<usize>,
+    scaling_factor: Option<f32>,
     children: Vec<GeneratorChild>,
 }
 
@@ -186,6 +189,16 @@ impl GeneratorNode {
         Self { 
             node, 
             textures_to_output: Vec::new(),
+            scaling_factor: None,
+            children: Vec::new(),
+        }
+    }
+
+    fn new_base(scaling_factor: f32) -> Self {
+        Self { 
+            node: Node::base(), 
+            textures_to_output: Vec::new(),
+            scaling_factor: Some(scaling_factor),
             children: Vec::new(),
         }
     }
@@ -195,30 +208,28 @@ pub struct Generator {
     textures: HashMap<usize, Texture>,
     base: Rc<RefCell<GeneratorNode>>,
     node_stack: Vec<Rc<RefCell<GeneratorNode>>>,
-    scale: f32,
     mesh_transparency: MeshTransparency,
     reverse_orientation: bool
 }
 
 impl Generator {
     pub fn new(scale: f32, mesh_transparency: MeshTransparency, reverse_orientation: bool) -> Self {
-        let base = Rc::new(RefCell::new(GeneratorNode::new(Node::base())));
+        let base = Rc::new(RefCell::new(GeneratorNode::new_base(scale)));
         Self {
             textures: HashMap::new(),
             base: base.clone(),
             node_stack: vec![base.clone()],
-            scale,
             mesh_transparency,
             reverse_orientation,
         }
     }
 
     fn output_recursive(&self, output: &mut GeneratorOutputWalker, node: &GeneratorNode) {
-        output.visit_node_start(&node.node, &node.textures_to_output, &self.textures, self.scale);
+        output.visit_node_start(&node.node, &node.textures_to_output, &self.textures, node.scaling_factor);
         for child in &node.children {
             match child {
                 GeneratorChild::Node(node) => self.output_recursive(output, &*node.borrow()),
-                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.scale, self.mesh_transparency, self.reverse_orientation),
+                GeneratorChild::Face(face) => output.visit_face(&face.face, face.class, self.mesh_transparency, self.reverse_orientation),
             }
         }
         output.visit_node_end();
