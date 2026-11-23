@@ -73,40 +73,40 @@ impl GeneratorOutputWalker {
         // translation
         let [x, y, z] = node.transforms.translation;
         if x != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-x: {x}"));
+            self.add_output(&format!("  --node-inherent-translate-x: {x};"));
         }
         if y != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-y: {y}"));
+            self.add_output(&format!("  --node-inherent-translate-y: {y};"));
         }
         if z != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-z: {z}"));
+            self.add_output(&format!("  --node-inherent-translate-z: {z};"));
         }
 
         let [x, y, z, w] = node.transforms.rotation;
         let y = -1.0 * y;
         if x != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-x: {x}"));
+            self.add_output(&format!("  --node-inherent-rotation-x: {x};"));
         }
         if y != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-y: {y}"));
+            self.add_output(&format!("  --node-inherent-rotation-y: {y};"));
         }
         if z != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-z: {z}"));
+            self.add_output(&format!("  --node-inherent-rotation-z: {z};"));
         }        
         let angle = -2.0 * w.acos();
         if angle != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-angle: {w}"));
+            self.add_output(&format!("  --node-inherent-rotation-angle: {angle}rad;"));
         }
 
         let [x, y, z] = node.transforms.scale;
         if x != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-x: {x}"));
+            self.add_output(&format!("  --node-inherent-scale-x: {x};"));
         }
         if y != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-y: {y}"));
+            self.add_output(&format!("  --node-inherent-scale-y: {y};"));
         }
         if z != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-z: {z}"));
+            self.add_output(&format!("  --node-inherent-scale-z: {z};"));
         }
 
         self.add_output("\">");
