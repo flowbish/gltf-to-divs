@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use base64::Engine;
 use gltf::buffer;
 use gltf::image;
 use gltf::Material;
@@ -9,6 +10,8 @@ use gltf::image::Source;
 use gltf::Document;
 
 use wasm_bindgen::prelude::*;
+
+use base64::prelude::BASE64_STANDARD;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MeshTransparency {
@@ -465,18 +468,39 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
     generator.pop_node();
 }
 
-pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, exclude_nodes: &Vec<String>, quadify: bool) {
+fn visit_textures(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>) {
     for texture in gltf.textures() {
         let uri = texture.source().and_then(
             |image| {
                 match image.source() {
                     Source::Uri { uri, .. } => Some(uri.to_string()),
-                    _ => None,
+                    Source::View { view, mime_type } => {
+                        match view.buffer().source() {
+                            buffer::Source::Uri(uri) => {
+                                // TODO: this probably needs to have its data sliced using the offset and length of the view.
+                                Some(uri.to_string())
+                            }
+                            buffer::Source::Bin => {
+                                buffers.get(view.buffer().index()).and_then(|buffer| {
+                                    let start = view.offset();
+                                    let end = view.offset() + view.length();
+                                    buffer.get(start..end)
+                                }).map(|viewed_buffer| {
+                                    let base64_data = BASE64_STANDARD.encode(viewed_buffer);
+                                    format!("data:{mime_type};base64,{base64_data}")
+                                })
+                            }
+                        }
+                    }
                 }
             }
         );
         generator.visit_texture(texture.index(), Texture { uri });
     }
+}
+
+pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, exclude_nodes: &Vec<String>, quadify: bool) {
+    visit_textures(generator, gltf, buffers);
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
