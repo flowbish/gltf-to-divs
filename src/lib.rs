@@ -3,12 +3,15 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use base64::Engine;
+use gltf::animation::util::ReadOutputs;
+use gltf::animation::Property;
 use gltf::buffer;
 use gltf::image;
 use gltf::Material;
 use gltf::image::Source;
 use gltf::Document;
 
+use ordered_float::OrderedFloat;
 use wasm_bindgen::prelude::*;
 
 use base64::prelude::BASE64_STANDARD;
@@ -40,8 +43,8 @@ impl GeneratorOutputWalker {
         }
     }
 
-    fn add_output(&mut self, output: &str) {
-        for line in output.lines() {
+    fn add_output<T: AsRef<str>>(&mut self, output: T) {
+        for line in output.as_ref().lines() {
             for _ in 0..self.indentation {
                 self.output.push_str("  ");
             }
@@ -55,61 +58,65 @@ impl GeneratorOutputWalker {
     }
 
     fn visit_node_start(&mut self, node: &Node, textures_to_output: &Vec<usize>, textures: &HashMap<usize, Texture>, scale: Option<f32>) {
-        let name = &node.name;
-
-        self.add_output(&format!(r#"<div class="node {name}" style=""#));
+        let mut classes = vec!["node".to_string(), node.name.clone()];
+        if let Some(index) = node.index {
+            classes.push(format!("node-{index}"));
+        }
+        let classes = classes.join(" ");
+        
+        self.add_output(&format!(r#"<div class="{classes}" style=""#));
 
         for texture_index in textures_to_output {
             let texture_image = textures.get(&texture_index).and_then(
                 |texture| texture.uri.clone()
             );
             if let Some(uri) = texture_image {
-                self.add_output(&format!("  --texture-{texture_index}: url({uri});"));
+                self.add_output(format!("  --texture-{texture_index}: url({uri});"));
             }
         }
         
         // base scale
         if let Some(scale) = scale {
-            self.add_output(&format!("  --base-scale: {scale};"));
+            self.add_output(format!("  --base-scale: {scale};"));
         }
 
         // translation
         let [x, y, z] = node.transforms.translation;
         if x != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-x: {x};"));
+            self.add_output(format!("  --node-inherent-translate-x: {x};"));
         }
         if y != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-y: {y};"));
+            self.add_output(format!("  --node-inherent-translate-y: {y};"));
         }
         if z != 0.0 {
-            self.add_output(&format!("  --node-inherent-translate-z: {z};"));
+            self.add_output(format!("  --node-inherent-translate-z: {z};"));
         }
 
         let [x, y, z, w] = node.transforms.rotation;
         let y = -1.0 * y;
         if x != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-x: {x};"));
+            self.add_output(format!("  --node-inherent-rotation-x: {x};"));
         }
         if y != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-y: {y};"));
+            self.add_output(format!("  --node-inherent-rotation-y: {y};"));
         }
         if z != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-z: {z};"));
+            self.add_output(format!("  --node-inherent-rotation-z: {z};"));
         }        
         let angle = -2.0 * w.acos();
         if angle != 0.0 {
-            self.add_output(&format!("  --node-inherent-rotation-angle: {angle}rad;"));
+            self.add_output(format!("  --node-inherent-rotation-angle: {angle}rad;"));
         }
 
         let [x, y, z] = node.transforms.scale;
         if x != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-x: {x};"));
+            self.add_output(format!("  --node-inherent-scale-x: {x};"));
         }
         if y != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-y: {y};"));
+            self.add_output(format!("  --node-inherent-scale-y: {y};"));
         }
         if z != 1.0 {
-            self.add_output(&format!("  --node-inherent-scale-z: {z};"));
+            self.add_output(format!("  --node-inherent-scale-z: {z};"));
         }
 
         self.add_output("\">");
@@ -153,29 +160,115 @@ impl GeneratorOutputWalker {
         let tex_b_t = b.texture[1];
         let tex_c_s = c.texture[0];
         let tex_c_t = c.texture[1];
-        self.add_output(&format!(r#"<div class="{classes}" style=""#));
-        self.add_output(&format!("--a-x: calc(var(--base-scale) * {a_x});"));
-        self.add_output(&format!("--a-y: calc(var(--base-scale) * {a_y});"));
-        self.add_output(&format!("--a-z: calc(var(--base-scale) * {a_z});"));
-        self.add_output(&format!("--b-x: calc(var(--base-scale) * {b_x});"));
-        self.add_output(&format!("--b-y: calc(var(--base-scale) * {b_y});"));
-        self.add_output(&format!("--b-z: calc(var(--base-scale) * {b_z});"));
-        self.add_output(&format!("--c-x: calc(var(--base-scale) * {c_x});"));
-        self.add_output(&format!("--c-y: calc(var(--base-scale) * {c_y});"));
-        self.add_output(&format!("--c-z: calc(var(--base-scale) * {c_z});"));
+        self.add_output(format!(r#"<div class="{classes}" style=""#));
+        self.add_output(format!("--a-x: calc(var(--base-scale) * {a_x});"));
+        self.add_output(format!("--a-y: calc(var(--base-scale) * {a_y});"));
+        self.add_output(format!("--a-z: calc(var(--base-scale) * {a_z});"));
+        self.add_output(format!("--b-x: calc(var(--base-scale) * {b_x});"));
+        self.add_output(format!("--b-y: calc(var(--base-scale) * {b_y});"));
+        self.add_output(format!("--b-z: calc(var(--base-scale) * {b_z});"));
+        self.add_output(format!("--c-x: calc(var(--base-scale) * {c_x});"));
+        self.add_output(format!("--c-y: calc(var(--base-scale) * {c_y});"));
+        self.add_output(format!("--c-z: calc(var(--base-scale) * {c_z});"));
         if let Some(texture_var) = texture_var {
-            self.add_output(&format!("--texture-image: var({texture_var});"));
+            self.add_output(format!("--texture-image: var({texture_var});"));
         } else {
-            self.add_output(&format!("--texture-background-color: {color};"));
+            self.add_output(format!("--texture-background-color: {color};"));
         }
-        self.add_output(&format!("--texture-a-s: {tex_a_s};"));
-        self.add_output(&format!("--texture-a-t: {tex_a_t};"));
-        self.add_output(&format!("--texture-b-s: {tex_b_s};"));
-        self.add_output(&format!("--texture-b-t: {tex_b_t};"));
-        self.add_output(&format!("--texture-c-s: {tex_c_s};"));
-        self.add_output(&format!("--texture-c-t: {tex_c_t};"));
+        self.add_output(format!("--texture-a-s: {tex_a_s};"));
+        self.add_output(format!("--texture-a-t: {tex_a_t};"));
+        self.add_output(format!("--texture-b-s: {tex_b_s};"));
+        self.add_output(format!("--texture-b-t: {tex_b_t};"));
+        self.add_output(format!("--texture-c-s: {tex_c_s};"));
+        self.add_output(format!("--texture-c-t: {tex_c_t};"));
         self.add_output(r#""></div>"#);
     }
+
+    fn style_start(&mut self) {
+        self.add_output("<style>");
+    }
+
+    fn style_end(&mut self) {
+        self.add_output("</style>");
+    }
+
+    fn visit_animation(&mut self, animation: &Animation) {
+        let name = animation.name();
+        self.add_output(format!("/*"));
+        self.add_output(format!(" * Animation: {name}"));
+        self.add_output(format!(" */"));
+
+        let length_in_seconds = animation.length_in_seconds;
+
+
+        for channel in &animation.channels {
+            let channel_index = channel.index;
+            let keyframes_name = format!("{name}-{channel_index}");
+
+            let node_index = channel.node_index;
+            let node_name: String = channel.node_name.clone().unwrap_or("unknown".to_string());
+            let property_name = match channel.property {
+                Property::Rotation => "rotation",
+                Property::Translation => "translation",
+                Property::Scale => "scale",
+                _ => panic!(),
+            };
+            self.add_output(format!("/* {name} {property_name} for node {node_name} ({node_index}) */"));
+
+            self.add_output(format!("@keyframes {keyframes_name} {{"));
+            for (input, transforms) in &channel.keyframes {
+                let percentage = input/length_in_seconds * 100.0;
+                self.add_output(format!("  {percentage}% {{"));
+                for transform in transforms {
+                    match transform {
+                        Transformation::Translation([x, y , z]) => {
+                            self.add_output(format!("    --node-inherent-translate-x: {x};"));
+                            self.add_output(format!("    --node-inherent-translate-y: {y};"));
+                            self.add_output(format!("    --node-inherent-translate-z: {z};"));
+                        },
+                        Transformation::Rotation([x, y , z, w]) => {
+                            let angle = -2.0 * w.acos();
+                            self.add_output(format!("    --node-inherent-rotation-x: {x};"));
+                            self.add_output(format!("    --node-inherent-rotation-y: {y};"));
+                            self.add_output(format!("    --node-inherent-rotation-z: {z};"));
+                            self.add_output(format!("    --node-inherent-rotation-angle: {angle}rad;"));
+                        },
+                        Transformation::Scale([x, y , z]) => {
+                            self.add_output(format!("    --node-inherent-scale-x: {x};"));
+                            self.add_output(format!("    --node-inherent-scale-y: {y};"));
+                            self.add_output(format!("    --node-inherent-scale-z: {z};"));
+                        },
+                    }
+                }
+                self.add_output("  }")
+            }
+            self.add_output("}");
+        }
+
+
+        self.add_output(format!(".{name} {{"));
+        self.indentation += 1;
+
+        for channel in &animation.channels {
+            let node_index = channel.node_index;
+            let node_name: String = channel.node_name.clone().unwrap_or("unknown".to_string());
+            let channel_index = channel.index;
+            let property_name = match channel.property {
+                Property::Rotation => "rotation",
+                Property::Translation => "translation",
+                Property::Scale => "scale",
+                _ => panic!(),
+            };
+            self.add_output(format!("/* {name} {property_name} for node {node_name} ({node_index}) */"));
+            self.add_output(format!(".node.node-{node_index} {{"));
+            self.add_output(format!("  animation: {name}-{channel_index} {length_in_seconds}s infinite linear;"));
+            self.add_output("}")
+        }
+
+        self.indentation -= 1;
+        self.add_output("}");
+    }
+
 
 }
 
@@ -230,6 +323,7 @@ impl GeneratorNode {
 
 pub struct Generator {
     textures: HashMap<usize, Texture>,
+    animations: Animations,
     base: Rc<RefCell<GeneratorNode>>,
     node_stack: Vec<Rc<RefCell<GeneratorNode>>>,
     mesh_transparency: MeshTransparency,
@@ -241,6 +335,7 @@ impl Generator {
         let base = Rc::new(RefCell::new(GeneratorNode::new_base(scale)));
         Self {
             textures: HashMap::new(),
+            animations: Animations::new(),
             base: base.clone(),
             node_stack: vec![base.clone()],
             mesh_transparency,
@@ -259,10 +354,23 @@ impl Generator {
         output.visit_node_end();
     }
 
+    fn output_styles(&self, output: &mut GeneratorOutputWalker) {
+        output.style_start();
+        for animation in self.animations.map.values() {
+            output.visit_animation(animation);
+        }
+        output.style_end();
+    }
+
     pub fn output(&self) -> String {
         let mut output = GeneratorOutputWalker::new();
         self.output_recursive(&mut output, &*self.base.borrow());
+        self.output_styles(&mut output);
         output.output().to_string()
+    }
+
+    fn visit_animation(&mut self, animation: Animation) {
+        self.animations.map.insert(animation.index, animation);
     }
 
     fn visit_texture(&mut self, index: usize, texture: Texture) {
@@ -307,6 +415,7 @@ struct Transforms {
 #[derive(Debug, Clone)]
 struct Node {
     name: String,
+    index: Option<usize>,
     transforms: Transforms,
 }
 
@@ -314,6 +423,7 @@ impl Node {
     fn base() -> Self {
         Self {
             name: "base".to_string(),
+            index: None,
             transforms: Transforms { translation: [0.0, 0.0, 0.0], rotation: [0.0, 0.0, 0.0, 1.0], scale: [1.0, 1.0, 1.0] },
         }
     }
@@ -429,6 +539,7 @@ fn visit_children<'a>(generator: &mut Generator, node: &gltf::Node<'a>, buffers:
 
     generator.push_node(Node{
         name: name.to_string(),
+        index: Some(node.index()),
         transforms,
     });
 
@@ -499,8 +610,138 @@ fn visit_textures(generator: &mut Generator, gltf: &gltf::Document, buffers: &Ve
     }
 }
 
+struct Animations {
+    /// mapped by index
+    map: HashMap<usize, Animation>,
+}
+
+
+impl Animations {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new()
+        }
+    }
+}
+
+#[derive(Debug)]
+
+struct Animation {
+    name: Option<String>,
+    index: usize,
+    channels: Vec<Channel>,
+    length_in_seconds: f32,
+}
+
+impl Animation {
+    fn new_from_gltf(animation: gltf::Animation, buffers: &Vec<buffer::Data>) -> Self {
+        let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
+            buffers.get(buffer.index()).map(|data| &*data.0)
+        };
+
+        let name = animation.name();
+
+        let max_input = animation.channels().map(
+            |channel| {
+                channel.reader(get_buffer_data).read_inputs().unwrap().last().unwrap()
+            }
+        ).reduce(f32::max).unwrap_or(0.0);
+
+        let channels = animation.channels().map(|c| Channel::new_from_gltf(c, buffers)).collect();
+
+        Animation {
+            name: name.map(ToString::to_string),
+            index: animation.index(),
+            channels,
+            length_in_seconds: max_input,
+        }
+    }
+
+    fn name(&self) -> String {
+        self.name.clone().unwrap_or(format!("animation-{}", self.index))
+    }
+}
+
+#[derive(Debug)]
+
+enum Transformation {
+    Translation([f32; 3]),
+    Rotation([f32; 4]),
+    Scale([f32; 3]),
+}
+
+#[derive(Debug)]
+struct Channel {
+    index: usize,
+    node_index: usize,
+    node_name: Option<String>,
+    property: Property,
+    keyframes: HashMap<OrderedFloat<f32>, Vec<Transformation>>,
+}
+
+impl Channel {
+    fn new_from_gltf(channel: gltf::animation::Channel, buffers: &Vec<buffer::Data>) -> Self {
+        let get_buffer_data = |buffer: gltf::Buffer| -> Option<&[u8]> {
+            buffers.get(buffer.index()).map(|data| &*data.0)
+        };
+
+        let target = channel.target();
+        let node = target.node();
+        let property = target.property();
+
+        let mut keyframes: HashMap<OrderedFloat<f32>, Vec<Transformation>> = HashMap::new();
+
+        let reader = channel.reader(get_buffer_data);
+        let output = reader.read_outputs().unwrap();
+        match output {
+            ReadOutputs::Translations(translations) => {
+                for (input, output) in reader.read_inputs().unwrap().zip(translations) {
+                    assert_eq!(property, Property::Translation);
+                    let transformations = keyframes.entry(OrderedFloat(input));
+                    transformations.or_default().push(Transformation::Translation(output));
+                }
+            }                
+            ReadOutputs::Rotations(rotations) => {
+                for (input, output) in reader.read_inputs().unwrap().zip(rotations.into_f32()) {
+                    assert_eq!(property, Property::Rotation);
+                    let transformations = keyframes.entry(OrderedFloat(input));
+                    transformations.or_default().push(Transformation::Rotation(output));
+                }
+            }
+            ReadOutputs::Scales(scales) => {
+                for (input, output) in reader.read_inputs().unwrap().zip(scales) {
+                    assert_eq!(property, Property::Rotation);
+                    let transformations = keyframes.entry(OrderedFloat(input));
+                    transformations.or_default().push(Transformation::Scale(output));
+                }
+            }
+            ReadOutputs::MorphTargetWeights(_) => {
+                
+            }
+        };
+
+        Channel {
+            index: channel.index(),
+            node_index: node.index(),
+            node_name: node.name().map(ToOwned::to_owned),
+            property,
+            keyframes,
+        }
+    }
+}
+
+fn visit_animations(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>) {
+
+
+    for animation in gltf.animations() {
+
+        generator.visit_animation(Animation::new_from_gltf(animation, buffers));
+    }
+}
+
 pub fn generate_divs(generator: &mut Generator, gltf: &gltf::Document, buffers: &Vec<buffer::Data>, desired_nodes: &Vec<String>, exclude_nodes: &Vec<String>, quadify: bool) {
     visit_textures(generator, gltf, buffers);
+    visit_animations(generator, gltf, buffers);
 
     for scene in gltf.scenes() {
         for node in scene.nodes() {
