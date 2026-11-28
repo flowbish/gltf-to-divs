@@ -710,7 +710,7 @@ impl Channel {
             }
             ReadOutputs::Scales(scales) => {
                 for (input, output) in reader.read_inputs().unwrap().zip(scales) {
-                    assert_eq!(property, Property::Rotation);
+                    assert_eq!(property, Property::Scale);
                     let transformations = keyframes.entry(OrderedFloat(input));
                     transformations.or_default().push(Transformation::Scale(output));
                 }
